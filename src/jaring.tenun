@@ -149,6 +149,244 @@ fungsi html_judul(html: teks): teks {
     kembali pangkas(html_tag(html, "title"));
 }
 
+// ---- Elemen & traversal (cheerio-like) ----
+
+// Apakah karakter adalah batas akhir nama tag.
+fungsi html_batas(c: teks): bool {
+    kembali c == " " || c == ">" || c == "/" || c == "\t" || c == "\n" || c == "\r" || c == "";
+}
+
+// Nama tag pada posisi '<' (lt = indeks '<').
+fungsi html_nama_tag(html: teks, lt: bulat): teks {
+    biar mulai: bulat = lt + 1;
+    biar i: bulat = mulai;
+    selama i < panjangTeks(html) {
+        kalau html_batas(potong(html, i, 1)) {
+            henti;
+        }
+        i = i + 1;
+    }
+    kembali potong(html, mulai, i - mulai);
+}
+
+// Ambil elemen LUAR (outer) <tag ...>...</tag> mulai dari posisi buka, sadar
+// kedalaman (menangani tag bersarang dengan nama sama).
+fungsi html_outer_dari(html: teks, buka: bulat, tag: teks): teks {
+    biar bukaTag: teks = "<" + tag;
+    biar tutupTag: teks = "</" + tag;
+    biar depth: bulat = 0;
+    biar pos: bulat = buka;
+    selama pos < panjangTeks(html) {
+        biar sisa: teks = jaring_sisa(html, pos);
+        biar nb: bulat = cari(sisa, bukaTag);
+        biar nt: bulat = cari(sisa, tutupTag);
+        kalau nt < 0 {
+            kembali jaring_sisa(html, buka);
+        }
+        kalau nb >= 0 && nb < nt {
+            biar after: teks = potong(sisa, nb + panjangTeks(bukaTag), 1);
+            kalau html_batas(after) {
+                depth = depth + 1;
+            }
+            pos = pos + nb + panjangTeks(bukaTag);
+        } lain {
+            depth = depth - 1;
+            kalau depth <= 0 {
+                biar endRel: bulat = nt + panjangTeks(tutupTag);
+                biar ekor: teks = jaring_sisa(sisa, endRel);
+                biar gt: bulat = cari(ekor, ">");
+                kalau gt < 0 {
+                    kembali jaring_sisa(html, buka);
+                }
+                biar total: bulat = pos + endRel + gt + 1;
+                kembali potong(html, buka, total - buka);
+            }
+            pos = pos + nt + panjangTeks(tutupTag);
+        }
+    }
+    kembali jaring_sisa(html, buka);
+}
+
+// Elemen luar pertama bertag `tag`.
+fungsi html_elemen(html: teks, tag: teks): teks {
+    biar buka: bulat = cari(html, "<" + tag);
+    kalau buka < 0 {
+        kembali "";
+    }
+    kembali html_outer_dari(html, buka, tag);
+}
+
+// Semua elemen luar bertag `tag` (untuk di-loop / drill ke anak).
+fungsi html_semua_elemen(html: teks, tag: teks): []teks {
+    biar hasil: []teks = [];
+    biar sisa: teks = html;
+    selama benar {
+        biar buka: bulat = cari(sisa, "<" + tag);
+        kalau buka < 0 {
+            henti;
+        }
+        biar after: teks = potong(sisa, buka + 1 + panjangTeks(tag), 1);
+        kalau html_batas(after) == salah {
+            sisa = jaring_sisa(sisa, buka + 1);
+            lanjut;
+        }
+        biar outer: teks = html_outer_dari(sisa, buka, tag);
+        hasil = dorong(hasil, outer);
+        sisa = jaring_sisa(sisa, buka + panjangTeks(outer));
+    }
+    kembali hasil;
+}
+
+// Semua elemen luar yang punya class mengandung `kelas`.
+fungsi html_kelas(html: teks, kelas: teks): []teks {
+    biar hasil: []teks = [];
+    biar sisa: teks = html;
+    selama benar {
+        biar cp: bulat = cari(sisa, "class=\"");
+        kalau cp < 0 {
+            henti;
+        }
+        biar valMulai: bulat = cp + 7;
+        biar ekor: teks = jaring_sisa(sisa, valMulai);
+        biar q: bulat = cari(ekor, "\"");
+        biar nilai: teks = potong(ekor, 0, q);
+        biar lt: bulat = cp;
+        selama lt > 0 && potong(sisa, lt, 1) != "<" {
+            lt = lt - 1;
+        }
+        kalau cari(nilai, kelas) >= 0 {
+            biar tag: teks = html_nama_tag(sisa, lt);
+            hasil = dorong(hasil, html_outer_dari(sisa, lt, tag));
+        }
+        sisa = jaring_sisa(sisa, valMulai + q + 1);
+    }
+    kembali hasil;
+}
+
+// Elemen luar dengan id tertentu.
+fungsi html_id(html: teks, id: teks): teks {
+    biar p: bulat = cari(html, "id=\"" + id + "\"");
+    kalau p < 0 {
+        kembali "";
+    }
+    biar lt: bulat = p;
+    selama lt > 0 && potong(html, lt, 1) != "<" {
+        lt = lt - 1;
+    }
+    biar tag: teks = html_nama_tag(html, lt);
+    kembali html_outer_dari(html, lt, tag);
+}
+
+// Tag pembuka sebuah elemen (dari awal sampai '>' pertama).
+fungsi html_tag_buka(el: teks): teks {
+    biar g: bulat = cari(el, ">");
+    kalau g < 0 {
+        kembali el;
+    }
+    kembali potong(el, 0, g + 1);
+}
+
+// Cocokkan satu selektor sederhana: "tag" | ".kelas" | "#id" | "tag.kelas" | "tag#id".
+fungsi html_cocok(html: teks, sel: teks): []teks {
+    kalau mulaiDengan(sel, "#") {
+        biar e: teks = html_id(html, potong(sel, 1, panjangTeks(sel) - 1));
+        kalau panjangTeks(e) > 0 {
+            kembali [e];
+        }
+        kembali [];
+    }
+    kalau mulaiDengan(sel, ".") {
+        kembali html_kelas(html, potong(sel, 1, panjangTeks(sel) - 1));
+    }
+    biar tag: teks = sel;
+    biar kelas: teks = "";
+    biar id: teks = "";
+    biar dot: bulat = cari(sel, ".");
+    kalau dot >= 0 {
+        tag = potong(sel, 0, dot);
+        kelas = potong(sel, dot + 1, panjangTeks(sel) - (dot + 1));
+    }
+    biar hsh: bulat = cari(sel, "#");
+    kalau hsh >= 0 {
+        tag = potong(sel, 0, hsh);
+        id = potong(sel, hsh + 1, panjangTeks(sel) - (hsh + 1));
+    }
+    biar kandidat: []teks = html_semua_elemen(html, tag);
+    kalau panjangTeks(kelas) == 0 && panjangTeks(id) == 0 {
+        kembali kandidat;
+    }
+    biar hasil: []teks = [];
+    untuk el dari kandidat {
+        biar buka: teks = html_tag_buka(el);
+        biar sesuai: bool = benar;
+        kalau panjangTeks(kelas) > 0 {
+            kalau cari(html_atribut(buka, "class"), kelas) < 0 {
+                sesuai = salah;
+            }
+        }
+        kalau panjangTeks(id) > 0 {
+            kalau html_atribut(buka, "id") != id {
+                sesuai = salah;
+            }
+        }
+        kalau sesuai {
+            hasil = dorong(hasil, el);
+        }
+    }
+    kembali hasil;
+}
+
+// Pilih elemen dengan CSS selector. Dukung kombinator keturunan (spasi):
+// "div.produk h2", ".harga", "#main a", dst. Kembalikan []teks elemen luar.
+fungsi html_pilih(html: teks, selektor: teks): []teks {
+    biar bagian: []teks = pisah(pangkas(selektor), " ");
+    biar konteks: []teks = [html];
+    untuk b dari bagian {
+        kalau panjangTeks(b) == 0 {
+            lanjut;
+        }
+        biar berikut: []teks = [];
+        untuk ctx dari konteks {
+            untuk m dari html_cocok(ctx, b) {
+                berikut = dorong(berikut, m);
+            }
+        }
+        konteks = berikut;
+    }
+    kembali konteks;
+}
+
+// Pilih elemen pertama yang cocok ("" bila tak ada).
+fungsi html_pilih_satu(html: teks, selektor: teks): teks {
+    biar r: []teks = html_pilih(html, selektor);
+    kalau panjang(r) > 0 {
+        kembali r[0];
+    }
+    kembali "";
+}
+
+// XPath subset: "//tag" dan "//tag[@atribut='nilai']".
+fungsi html_xpath(html: teks, xp: teks): []teks {
+    biar e: teks = pangkas(xp);
+    kalau mulaiDengan(e, "//") {
+        e = potong(e, 2, panjangTeks(e) - 2);
+    }
+    biar brk: bulat = cari(e, "[");
+    kalau brk < 0 {
+        kembali html_semua_elemen(html, e);
+    }
+    biar tag: teks = potong(e, 0, brk);
+    biar attr: teks = html_antara(e, "@", "=");
+    biar nilai: teks = html_antara(e, "='", "'");
+    biar hasil: []teks = [];
+    untuk el dari html_semua_elemen(html, tag) {
+        kalau html_atribut(html_tag_buka(el), attr) == nilai {
+            hasil = dorong(hasil, el);
+        }
+    }
+    kembali hasil;
+}
+
 // Substring antara dua penanda (mis. potong potongan tertentu).
 fungsi html_antara(html: teks, awal: teks, akhir: teks): teks {
     biar p: bulat = cari(html, awal);
