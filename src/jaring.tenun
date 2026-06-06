@@ -1,0 +1,165 @@
+// Modul Jaring — HTTP client (axios-like) + parser HTML/XML (cheerio-like)
+// untuk scraping. TLS (https) otomatis lewat builtin ambil/httpKirim.
+
+// ---- HTTP ----
+
+// GET sederhana (TLS otomatis untuk https). Kembalikan badan respons.
+fungsi jaring_get(url: teks): teks {
+    kembali ambil(url);
+}
+
+// Permintaan umum: metode + header (baris "Nama: Nilai" dipisah \n) + body.
+fungsi jaring_minta(metode: teks, url: teks, header: teks, body: teks): teks {
+    kembali httpKirim(metode, url, header, body);
+}
+
+// POST JSON.
+fungsi jaring_post(url: teks, body: teks): teks {
+    kembali httpKirim("POST", url, "Content-Type: application/json", body);
+}
+
+// GET dengan User-Agent kustom (berguna agar tidak diblokir).
+fungsi jaring_get_ua(url: teks, ua: teks): teks {
+    kembali httpKirim("GET", url, "User-Agent: " + ua, "");
+}
+
+// ---- Parser HTML / XML (berbasis teks) ----
+
+fungsi jaring_sisa(s: teks, mulai: bulat): teks {
+    kembali potong(s, mulai, panjangTeks(s) - mulai);
+}
+
+// Buang semua tag, kembalikan teks polos.
+fungsi html_teks(html: teks): teks {
+    biar keluar: teks = "";
+    biar i: bulat = 0;
+    biar dalam: bool = salah;
+    selama i < panjangTeks(html) {
+        biar c: teks = potong(html, i, 1);
+        kalau c == "<" {
+            dalam = benar;
+        } lain {
+            kalau c == ">" {
+                dalam = salah;
+            } lain {
+                kalau dalam == salah {
+                    keluar = keluar + c;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    kembali pangkas(keluar);
+}
+
+// Isi elemen pertama <tag ...>...</tag>. Juga jalan untuk XML.
+fungsi html_tag(html: teks, tag: teks): teks {
+    biar buka: bulat = cari(html, "<" + tag);
+    kalau buka < 0 {
+        kembali "";
+    }
+    biar ekorBuka: teks = jaring_sisa(html, buka);
+    biar tutupTag: bulat = cari(ekorBuka, ">");
+    kalau tutupTag < 0 {
+        kembali "";
+    }
+    biar isiMulai: bulat = buka + tutupTag + 1;
+    biar isi: teks = jaring_sisa(html, isiMulai);
+    biar akhir: bulat = cari(isi, "</" + tag);
+    kalau akhir < 0 {
+        kembali isi;
+    }
+    kembali potong(isi, 0, akhir);
+}
+
+// Semua isi <tag>...</tag> sebagai []teks.
+fungsi html_semua(html: teks, tag: teks): []teks {
+    biar hasil: []teks = [];
+    biar sisa: teks = html;
+    selama benar {
+        biar buka: bulat = cari(sisa, "<" + tag);
+        kalau buka < 0 {
+            henti;
+        }
+        biar ekorBuka: teks = jaring_sisa(sisa, buka);
+        biar tutupTag: bulat = cari(ekorBuka, ">");
+        kalau tutupTag < 0 {
+            henti;
+        }
+        biar isiMulai: bulat = buka + tutupTag + 1;
+        biar isi: teks = jaring_sisa(sisa, isiMulai);
+        biar akhir: bulat = cari(isi, "</" + tag);
+        kalau akhir < 0 {
+            henti;
+        }
+        hasil = dorong(hasil, potong(isi, 0, akhir));
+        sisa = jaring_sisa(isi, akhir);
+    }
+    kembali hasil;
+}
+
+// Nilai atribut (mis. html_atribut(tag, "href")). Cari nama="...".
+fungsi html_atribut(html: teks, nama: teks): teks {
+    biar pola: teks = nama + "=\"";
+    biar p: bulat = cari(html, pola);
+    kalau p < 0 {
+        kembali "";
+    }
+    biar mulai: bulat = p + panjangTeks(pola);
+    biar ekor: teks = jaring_sisa(html, mulai);
+    biar akhir: bulat = cari(ekor, "\"");
+    kalau akhir < 0 {
+        kembali "";
+    }
+    kembali potong(ekor, 0, akhir);
+}
+
+// Kumpulkan semua nilai atribut tertentu (mis. "href", "src") -> []teks.
+fungsi html_semua_atribut(html: teks, nama: teks): []teks {
+    biar pola: teks = nama + "=\"";
+    biar hasil: []teks = [];
+    biar sisa: teks = html;
+    selama benar {
+        biar p: bulat = cari(sisa, pola);
+        kalau p < 0 {
+            henti;
+        }
+        biar mulai: bulat = p + panjangTeks(pola);
+        biar ekor: teks = jaring_sisa(sisa, mulai);
+        biar akhir: bulat = cari(ekor, "\"");
+        kalau akhir < 0 {
+            henti;
+        }
+        hasil = dorong(hasil, potong(ekor, 0, akhir));
+        sisa = jaring_sisa(ekor, akhir + 1);
+    }
+    kembali hasil;
+}
+
+// Semua tautan (href) dan gambar (src).
+fungsi html_tautan(html: teks): []teks {
+    kembali html_semua_atribut(html, "href");
+}
+fungsi html_gambar(html: teks): []teks {
+    kembali html_semua_atribut(html, "src");
+}
+
+// Judul halaman.
+fungsi html_judul(html: teks): teks {
+    kembali pangkas(html_tag(html, "title"));
+}
+
+// Substring antara dua penanda (mis. potong potongan tertentu).
+fungsi html_antara(html: teks, awal: teks, akhir: teks): teks {
+    biar p: bulat = cari(html, awal);
+    kalau p < 0 {
+        kembali "";
+    }
+    biar mulai: bulat = p + panjangTeks(awal);
+    biar ekor: teks = jaring_sisa(html, mulai);
+    biar e: bulat = cari(ekor, akhir);
+    kalau e < 0 {
+        kembali ekor;
+    }
+    kembali potong(ekor, 0, e);
+}

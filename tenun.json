@@ -1,0 +1,10 @@
+{
+  "nama": "jaring",
+  "versi": "0.1.0",
+  "deskripsi": "HTTP client + parser HTML/XML untuk scraping (axios + cheerio dalam satu, TLS otomatis).",
+  "lisensi": "MIT",
+  "penulis": "TenunLang",
+  "berkas": "src/jaring.tenun",
+  "kataKunci": ["http", "fetch", "scraping", "html", "xml", "parser", "axios", "cheerio", "tls"],
+  "butuh": {}
+}
