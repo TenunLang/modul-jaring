@@ -1,0 +1,3 @@
+impor "../src/jaring.tenun";
+tegasSama(html_teks("<b>Halo</b>"), "Halo", "ambil teks tanpa tag");
+tegasSama(html_tag("<p>isi</p>", "p"), "isi", "ambil isi tag");
