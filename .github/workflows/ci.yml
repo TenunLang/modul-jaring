@@ -18,4 +18,5 @@ jobs:
           printf 'impor "jaring";\n' > cek.tenun
           "$HOME/.tenun/bin/tenun" run cek.tenun
       - name: Uji unit
-        run: "$HOME/.tenun/bin/tenun" check .
+        run: |
+          "$HOME/.tenun/bin/tenun" check .
